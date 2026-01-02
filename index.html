@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pong Nova</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+/* ===================== THEME ===================== */
+:root {
+    --bg-main: #020617;
+    --bg-card: rgba(255,255,255,0.06);
+    --bg-canvas: #020617;
+    --text-main: #e5e7eb;
+    --accent: #38bdf8;
+}
+
+body.light {
+    --bg-main: #f8fafc;
+    --bg-card: rgba(0,0,0,0.05);
+    --bg-canvas: #ffffff;
+    --text-main: #020617;
+}
+
+/* ===================== GLOBAL ===================== */
+* {
+    box-sizing: border-box;
+    font-family: "Inter", system-ui, sans-serif;
+}
+
+body {
+    margin: 0;
+    height: 100vh;
+    background:
+        radial-gradient(1200px at 20% 10%, #1e293b 0%, transparent 40%),
+        radial-gradient(800px at 80% 90%, #0f766e 0%, transparent 45%),
+        var(--bg-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-main);
+}
+
+/* ===================== CARD ===================== */
+.game-container {
+    position: relative;
+    width: 760px;
+    padding: 22px;
+    border-radius: 22px;
+    background: linear-gradient(
+        180deg,
+        rgba(255,255,255,0.08),
+        rgba(255,255,255,0.02)
+    );
+    backdrop-filter: blur(18px);
+    box-shadow:
+        0 40px 80px rgba(0,0,0,0.55),
+        inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.game-container.paused canvas {
+    filter: blur(3px) brightness(0.9);
+}
+
+/* ===================== TITLE ===================== */
+.game-title {
+    text-align: center;
+    margin: 0 0 6px 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.game-subtitle {
+    text-align: center;
+    margin: 0 0 16px 0;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    opacity: 0.6;
+}
+
+/* ===================== HEADER ===================== */
+header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.score {
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.score.flash {
+    animation: scoreFlash 0.3s ease;
+}
+
+@keyframes scoreFlash {
+    from { transform: scale(1.25); color: var(--accent); }
+    to { transform: scale(1); }
+}
+
+/* ===================== CONTROLS ===================== */
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+button, select {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text-main);
+    padding: 8px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+button.primary {
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: #020617;
+    font-weight: 600;
+    border: none;
+}
+
+/* ===================== CANVAS ===================== */
+canvas {
+    display: block;
+    margin: auto;
+    background: var(--bg-canvas);
+    border-radius: 18px;
+}
+
+/* ===================== FOOTER ===================== */
+footer {
+    margin-top: 8px;
+    text-align: center;
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
+
+/* ===================== OVERLAYS ===================== */
+.overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(2,6,23,0.88);
+    backdrop-filter: blur(12px);
+    border-radius: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+}
+
+.hidden { display: none; }
+</style>
+</head>
+
+<body>
+
+<div class="game-container" id="container">
+
+    <!-- TITLE -->
+    <h1 class="game-title">Pong Nova</h1>
+
+    <header>
+        <span>PLAYER 1</span>
+        <div class="score" id="score">0 : 0</div>
+        <span>PLAYER 2</span>
+    </header>
+
+    <div class="controls">
+        <select id="mode">
+            <option value="AI">Player vs Machine</option>
+            <option value="PVP">Player vs Player</option>
+        </select>
+
+        <select id="difficulty">
+            <option value="0.05">Easy</option>
+            <option value="0.08" selected>Medium</option>
+            <option value="0.12">Hard</option>
+        </select>
+
+        <button class="primary" onclick="startGame()">Start</button>
+        <button onclick="pauseGame()">Pause</button>
+        <button onclick="resetGame()">Reset</button>
+        <button id="themeToggle">🌙</button>
+        <button id="soundToggle">🔊</button>
+    </div>
+
+    <canvas id="game" width="700" height="400"></canvas>
+
+    <footer>
+        Desktop: W/S — ↑/↓ | Mobile: Drag paddle
+    </footer>
+
+    <div id="pauseOverlay" class="overlay hidden">
+        <h2>⏸ Paused</h2>
+        <p>Press Space to resume</p>
+    </div>
+
+    <div id="winner" class="overlay hidden">
+        <h1 id="winnerText"></h1>
+        <button class="primary" onclick="resetGame()">Play Again</button>
+    </div>
+
+</div>
+
+<script>
+/* ===================== AUDIO ===================== */
+let soundEnabled = localStorage.getItem("sound") !== "false";
+
+const sounds = {
+    hit: new Audio("hit.wav"),
+    score: new Audio("score.wav"),
+    win: new Audio("win.wav")
+};
+
+function safePlay(sound) {
+    if (!soundEnabled) return;
+    sound.currentTime = 0;
+    sound.play().catch(() => {});
+}
+
+/* ===================== CANVAS ===================== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const container = document.getElementById("container");
+
+/* ===================== STATE ===================== */
+const paddleW = 12, paddleH = 80;
+const WIN_SCORE = 15;
+
+let gameRunning = false;
+let gameMode = localStorage.getItem("mode") || "AI";
+let aiDifficulty = parseFloat(localStorage.getItem("difficulty")) || 0.08;
+let shake = 0;
+
+const stats = { hits: 0, startTime: null };
+
+const player1 = { x: 20, y: 160, score: 0 };
+const player2 = { x: canvas.width - 32, y: 160, score: 0 };
+
+const ball = { x: 350, y: 200, r: 8, vx: 5, vy: 5 };
+
+document.getElementById("mode").value = gameMode;
+document.getElementById("difficulty").value = aiDifficulty;
+
+/* ===================== INPUT ===================== */
+const keys = {};
+window.addEventListener("keydown", e => {
+    keys[e.key] = true;
+    if (e.code === "Space") pauseGame();
+});
+window.addEventListener("keyup", e => keys[e.key] = false);
+
+/* ===================== DRAW ===================== */
+function drawRect(x,y,w,h){ ctx.fillStyle="#e5e7eb"; ctx.fillRect(x,y,w,h); }
+
+function drawBall(){
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle="#38bdf8";
+    ctx.shadowColor="#38bdf8";
+    ctx.shadowBlur=15;
+    ctx.fill();
+    ctx.shadowBlur=0;
+}
+
+function drawNet(){
+    ctx.setLineDash([8,8]);
+    ctx.strokeStyle="rgba(255,255,255,0.1)";
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2,0);
+    ctx.lineTo(canvas.width/2,canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+/* ===================== GAME ===================== */
+function update(){
+    if (!gameRunning) return;
+
+    if (keys.w && player1.y>0) player1.y-=7;
+    if (keys.s && player1.y<canvas.height-paddleH) player1.y+=7;
+
+    if (gameMode==="PVP"){
+        if (keys.ArrowUp && player2.y>0) player2.y-=7;
+        if (keys.ArrowDown && player2.y<canvas.height-paddleH) player2.y+=7;
+    } else {
+        const error=(Math.random()-0.5)*30;
+        const target=ball.y-paddleH/2+error;
+        player2.y+=(target-player2.y)*aiDifficulty;
+    }
+
+    ball.x+=ball.vx; ball.y+=ball.vy;
+    if (ball.y<ball.r || ball.y>canvas.height-ball.r) ball.vy*=-1;
+
+    const paddle=ball.x<canvas.width/2?player1:player2;
+    if (ball.x-ball.r<paddle.x+paddleW &&
+        ball.x+ball.r>paddle.x &&
+        ball.y>paddle.y &&
+        ball.y<paddle.y+paddleH){
+        ball.vx*=-1.05;
+        shake=6; stats.hits++;
+        safePlay(sounds.hit);
+    }
+
+    if (ball.x<0 || ball.x>canvas.width){
+        (ball.x<0?player2:player1).score++;
+        safePlay(sounds.score);
+        flashScore();
+        resetBall();
+    }
+
+    scoreEl.textContent=`${player1.score} : ${player2.score}`;
+    checkWinner();
+}
+
+function resetBall(){
+    ball.x=canvas.width/2; ball.y=canvas.height/2; ball.vx*=-1;
+}
+
+const scoreEl=document.getElementById("score");
+function flashScore(){
+    scoreEl.classList.remove("flash");
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add("flash");
+}
+
+function checkWinner(){
+    if (player1.score===WIN_SCORE || player2.score===WIN_SCORE){
+        gameRunning=false;
+        safePlay(sounds.win);
+        document.getElementById("winner").classList.remove("hidden");
+        document.getElementById("winnerText").innerHTML=
+        `🏆 ${player1.score===WIN_SCORE?"Player 1":"Player 2"} Wins<br>
+        <span style="font-size:1rem;opacity:.8">
+        ⏱ ${getDuration()} — 🎯 ${stats.hits} hits
+        </span>`;
+    }
+}
+
+function getDuration(){
+    const s=Math.floor((Date.now()-stats.startTime)/1000);
+    return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,"0")}`;
+}
+
+/* ===================== LOOP ===================== */
+function draw(){
+    ctx.save();
+    if (shake>0){
+        ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+        shake--;
+    }
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawNet();
+    drawRect(player1.x,player1.y,paddleW,paddleH);
+    drawRect(player2.x,player2.y,paddleW,paddleH);
+    drawBall();
+    ctx.restore();
+}
+
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
+
+/* ===================== UI ===================== */
+function startGame(){
+    gameMode=document.getElementById("mode").value;
+    aiDifficulty=parseFloat(document.getElementById("difficulty").value);
+    localStorage.setItem("mode",gameMode);
+    localStorage.setItem("difficulty",aiDifficulty);
+    gameRunning=true;
+    stats.startTime=Date.now();
+}
+
+function pauseGame(){
+    gameRunning=!gameRunning;
+    document.getElementById("pauseOverlay")
+        .classList.toggle("hidden",gameRunning);
+    container.classList.toggle("paused",!gameRunning);
+}
+
+function resetGame(){
+    gameRunning=false;
+    player1.score=player2.score=0;
+    stats.hits=0;
+    resetBall();
+    document.getElementById("winner").classList.add("hidden");
+}
+
+/* ===================== THEME & SOUND ===================== */
+const toggle=document.getElementById("themeToggle");
+if(localStorage.getItem("theme")==="light"){
+    document.body.classList.add("light");
+    toggle.textContent="🌞";
+}
+toggle.onclick=()=>{
+    document.body.classList.toggle("light");
+    toggle.textContent=document.body.classList.contains("light")?"🌞":"🌙";
+    localStorage.setItem("theme",
+        document.body.classList.contains("light")?"light":"dark");
+};
+
+document.getElementById("soundToggle").onclick=()=>{
+    soundEnabled=!soundEnabled;
+    localStorage.setItem("sound",soundEnabled);
+    document.getElementById("soundToggle").textContent=
+        soundEnabled?"🔊":"🔇";
+};
+
+/* ===================== MOBILE ===================== */
+canvas.addEventListener("touchmove",e=>{
+    const r=canvas.getBoundingClientRect();
+    player1.y=e.touches[0].clientY-r.top-paddleH/2;
+    player1.y=Math.max(0,Math.min(canvas.height-paddleH,player1.y));
+    e.preventDefault();
+},{passive:false});
+</script>
+
+</body>
+</html>

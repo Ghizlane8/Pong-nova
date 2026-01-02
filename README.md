@@ -3,6 +3,8 @@
 **Pong Nova** is a modern and polished version of the classic Pong game, built entirely from scratch using **pure HTML, CSS, and JavaScript**.  
 The project focuses on clean UI design, smooth gameplay, and a solid user experience across desktop and mobile devices.
 
+This project demonstrates frontend fundamentals, game logic implementation, and attention to user experience.
+
 ---
 
 ## 🚀 Live Demo
